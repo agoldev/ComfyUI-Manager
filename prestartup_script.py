@@ -8,7 +8,7 @@ import re
 import locale
 import platform
 import json
-
+import fcntl
 
 glob_path = os.path.join(os.path.dirname(__file__), "glob")
 sys.path.append(glob_path)
@@ -244,13 +244,21 @@ try:
         def sync_write(self, message):
             with log_lock:
                 timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')[:-3]
-                if self.last_char != '\n':
-                    log_file.write(message)
-                else:
-                    log_file.write(f"[{timestamp}] {message}")
-                log_file.flush()
-                self.last_char = message if message == '' else message[-1]
-
+                
+                # Line 200: Lock the file for exclusive access
+                fcntl.flock(log_file.fileno(), fcntl.LOCK_EX)
+                
+                try:
+                    if self.last_char != '\n':
+                        log_file.write(message)
+                    else:
+                        log_file.write(f"[{timestamp}] {message}")
+                    log_file.flush()
+                    self.last_char = message if message == '' else message[-1]
+                finally:
+                    # Line 210: Unlock the file
+                    fcntl.flock(log_file.fileno(), fcntl.LOCK_UN)
+    
             with std_log_lock:
                 if self.is_stdout:
                     write_stdout(message)
